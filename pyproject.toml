@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-splat-loader"
+description = "In-node Gaussian splat viewport (Spark) for ComfyUI with WYSIWYG image capture."
+version = "0.1.0"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/brayevalerien/comfyui-splat-loader"
+
+[tool.comfy]
+PublisherId = "YOUR_PUBLISHER_ID"
+DisplayName = "Splat Loader"
+includes = ["web"]
