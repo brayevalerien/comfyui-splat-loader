@@ -66,10 +66,13 @@ class LoadSplatViewport(IO.ComfyNode):
         image_name = state.get("image", "")
         camera_info = state.get("camera_info", {})
 
-        output_image, output_mask = nodes.LoadImage().load_image(image=image_name)
+        # LoadImage returns 1 - alpha (white = background). Invert to coverage
+        # (white = splat) to match RenderSplat and the other splat nodes.
+        output_image, alpha_mask = nodes.LoadImage().load_image(image=image_name)
+        mask = 1.0 - alpha_mask
 
         mesh_path = model_file if model_file and model_file != "none" else ""
-        return IO.NodeOutput(output_image, output_mask, camera_info, mesh_path)
+        return IO.NodeOutput(output_image, mask, camera_info, mesh_path)
 
 
 class SplatLoaderExtension(ComfyExtension):
