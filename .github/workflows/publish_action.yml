@@ -19,4 +19,7 @@ jobs:
       - run: npm run build
       - uses: Comfy-Org/publish-node-action@main
         with:
+          # The action checks out and git-cleans by default, which would wipe the
+          # gitignored web/ bundle we just built. Skip it and publish the built tree.
+          skip_checkout: "true"
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}

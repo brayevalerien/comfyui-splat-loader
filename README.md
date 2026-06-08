@@ -20,7 +20,7 @@ Supported formats: `.spz`, `.ply`, `.splat`, `.ksplat`.
 ### Via ComfyUI Manager (recommended)
 Search for **Splat Loader** in [ComfyUI Manager](https://github.com/Comfy-Org/ComfyUI-Manager) and install it. The prebuilt viewport is bundled, so you do not need Node.js or any build step. Restart ComfyUI when prompted and you are done.
 
-### From source
+### Manual installation
 The viewport is a small web app that has to be built once, so you need [Node.js](https://nodejs.org/). A standard ComfyUI installation does not include it, so install it first if you do not have it.
 
 > Note: Node.js is only needed to build the viewport. ComfyUI itself does not use it.
