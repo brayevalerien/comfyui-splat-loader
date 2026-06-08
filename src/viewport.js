@@ -6,12 +6,22 @@ import { SparkRenderer, SplatMesh, SplatFileType } from "@sparkjsdev/spark";
 
 const NODE_ID = "LoadSplatViewport";
 const VIEW_HEIGHT = 360;
+const FRAME_MARGIN = 1.2;
 const EXT_TO_TYPE = {
   spz: SplatFileType.SPZ,
   ply: SplatFileType.PLY,
   splat: SplatFileType.SPLAT,
   ksplat: SplatFileType.KSPLAT,
 };
+// name, direction from target to camera, camera up (Z-up for top/bottom to avoid gimbal).
+const PRESETS = [
+  ["Front", [0, 0, 1], [0, 1, 0]],
+  ["Back", [0, 0, -1], [0, 1, 0]],
+  ["Left", [-1, 0, 0], [0, 1, 0]],
+  ["Right", [1, 0, 0], [0, 1, 0]],
+  ["Top", [0, 1, 0], [0, 0, -1]],
+  ["Bottom", [0, -1, 0], [0, 0, 1]],
+];
 
 // Map a ComfyUI input-relative path ("3d/foo.spz") to a /view URL.
 function splatFileURL(modelFile) {
@@ -44,6 +54,8 @@ class SplatViewport {
     this.splatMesh = null;
     this.disposed = false;
     this.flipped = true; // 3DGS files are usually Y-down -> default 180 about X
+    this.center = new THREE.Vector3();
+    this.radius = 1;
 
     this.container = document.createElement("div");
     Object.assign(this.container.style, {
@@ -71,14 +83,13 @@ class SplatViewport {
     this.spark = new SparkRenderer({ renderer: this.renderer });
     this.scene.add(this.spark);
 
-    this.camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+    const fov = widget(node, "fov")?.value ?? 35;
+    this.perspCam = new THREE.PerspectiveCamera(fov, 1, 0.01, 1000);
+    this.orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 1000);
+    this.camera = this.perspCam;
     this.camera.position.set(2, 1.5, 3);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.zoomToCursor = true;
-
+    this.rebuildControls();
     this.captureCanvasEvents();
     this.buildToolbar();
 
@@ -95,11 +106,23 @@ class SplatViewport {
 
     this.hookFileWidget();
     this.hookSizeWidgets();
+    this.hookCameraWidgets();
     this.installCapture();
+    if (widget(node, "camera_type")?.value === "orthographic") this.setCameraType("orthographic");
     this.layout();
 
     const initial = widget(node, "model_file")?.value;
     if (initial && initial !== "none") this.loadSplat(initial);
+  }
+
+  rebuildControls() {
+    const target = this.controls?.target?.clone();
+    this.controls?.dispose();
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.zoomToCursor = true;
+    if (target) this.controls.target.copy(target);
   }
 
   // The frontend has a global handler that forwards wheel events to the graph zoom,
@@ -123,30 +146,34 @@ class SplatViewport {
       top: "8px",
       left: "8px",
       display: "flex",
+      flexDirection: "column",
       gap: "6px",
       zIndex: "10",
     });
 
-    const loadBtn = document.createElement("button");
-    loadBtn.textContent = "Load file";
-    styleButton(loadBtn);
-    loadBtn.onclick = () => this.pickFile();
-
-    const flipBtn = document.createElement("button");
-    flipBtn.textContent = "Flip up/down";
-    styleButton(flipBtn);
-    flipBtn.onclick = () => this.toggleFlip();
-
-    const resetBtn = document.createElement("button");
-    resetBtn.textContent = "Reset view";
-    styleButton(resetBtn);
-    resetBtn.onclick = () => {
-      if (this.splatMesh) this.frameCamera(this.splatMesh);
+    const row = (...buttons) => {
+      const r = document.createElement("div");
+      Object.assign(r.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
+      buttons.forEach((b) => r.appendChild(b));
+      return r;
+    };
+    const button = (label, onclick) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      styleButton(b);
+      b.onclick = onclick;
+      return b;
     };
 
-    bar.appendChild(loadBtn);
-    bar.appendChild(flipBtn);
-    bar.appendChild(resetBtn);
+    const actions = row(
+      button("Load file", () => this.pickFile()),
+      button("Flip up/down", () => this.toggleFlip()),
+      button("Reset view", () => this.splatMesh && this.frameCamera(this.splatMesh)),
+    );
+    const presets = row(...PRESETS.map(([name]) => button(name, () => this.setPreset(name))));
+
+    bar.appendChild(actions);
+    bar.appendChild(presets);
     this.container.appendChild(bar);
   }
 
@@ -156,6 +183,30 @@ class SplatViewport {
       this.splatMesh.rotation.x = this.flipped ? Math.PI : 0;
       this.frameCamera(this.splatMesh);
     }
+  }
+
+  setPreset(name) {
+    const [, dir, up] = PRESETS.find(([n]) => n === name);
+    const dist = this.camera.position.distanceTo(this.controls.target) || this.radius * 3 || 3;
+    this.camera.up.set(...up);
+    this.camera.position.copy(this.controls.target).addScaledVector(new THREE.Vector3(...dir), dist);
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+
+  setCameraType(type) {
+    const next = type === "orthographic" ? this.orthoCam : this.perspCam;
+    if (next === this.camera) return;
+    const pos = this.camera.position.clone();
+    const up = this.camera.up.clone();
+    const target = this.controls.target.clone();
+    this.camera = next;
+    this.camera.position.copy(pos);
+    this.camera.up.copy(up);
+    this.rebuildControls();
+    this.controls.target.copy(target);
+    this.layout();
+    this.controls.update();
   }
 
   pickFile() {
@@ -199,6 +250,20 @@ class SplatViewport {
     return w / h;
   }
 
+  applyAspect(aspect) {
+    if (this.camera.isOrthographicCamera) {
+      const h = this.radius * FRAME_MARGIN;
+      const w = h * aspect;
+      this.camera.left = -w;
+      this.camera.right = w;
+      this.camera.top = h;
+      this.camera.bottom = -h;
+    } else {
+      this.camera.aspect = aspect;
+    }
+    this.camera.updateProjectionMatrix();
+  }
+
   // Letterbox the canvas inside the fixed-height box so its aspect matches the
   // output width/height: what you frame is what gets captured.
   layout() {
@@ -214,8 +279,7 @@ class SplatViewport {
     this.renderer.domElement.style.width = `${w}px`;
     this.renderer.domElement.style.height = `${h}px`;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = aspect;
-    this.camera.updateProjectionMatrix();
+    this.applyAspect(aspect);
   }
 
   frame() {
@@ -242,6 +306,26 @@ class SplatViewport {
       sw.callback = (value) => {
         prev?.call(sw, value);
         this.layout();
+      };
+    }
+  }
+
+  hookCameraWidgets() {
+    const fw = widget(this.node, "fov");
+    if (fw) {
+      const prev = fw.callback;
+      fw.callback = (value) => {
+        prev?.call(fw, value);
+        this.perspCam.fov = value;
+        this.perspCam.updateProjectionMatrix();
+      };
+    }
+    const cw = widget(this.node, "camera_type");
+    if (cw) {
+      const prev = cw.callback;
+      cw.callback = (value) => {
+        prev?.call(cw, value);
+        this.setCameraType(value);
       };
     }
   }
@@ -302,15 +386,19 @@ class SplatViewport {
       radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1e-3);
     }
 
-    const worldCenter = mesh.localToWorld(localCenter.clone());
-    const fov = (this.camera.fov * Math.PI) / 180;
-    const dist = (radius / Math.sin(fov / 2)) * 1.3;
-    this.controls.target.copy(worldCenter);
+    this.center.copy(mesh.localToWorld(localCenter.clone()));
+    this.radius = radius;
+    const fov = (this.perspCam.fov * Math.PI) / 180;
+    const dist = (radius / Math.sin(fov / 2)) * FRAME_MARGIN;
+    this.controls.target.copy(this.center);
     const dir = new THREE.Vector3(0.6, 0.4, 1).normalize();
-    this.camera.position.copy(worldCenter).addScaledVector(dir, dist);
-    this.camera.near = Math.max(dist / 1000, 1e-3);
-    this.camera.far = dist * 1000 + radius * 10;
-    this.camera.updateProjectionMatrix();
+    this.camera.position.copy(this.center).addScaledVector(dir, dist);
+    for (const cam of [this.perspCam, this.orthoCam]) {
+      cam.near = Math.max(dist / 1000, 1e-3);
+      cam.far = dist * 1000 + radius * 10;
+    }
+    this.camera.zoom = 1;
+    this.layout();
     this.controls.update();
   }
 
@@ -322,42 +410,68 @@ class SplatViewport {
       position: { x: p.x, y: p.y, z: p.z },
       target: { x: t.x, y: t.y, z: t.z },
       quaternion: { x: q.x, y: q.y, z: q.z, w: q.w },
-      fov: this.camera.fov,
-      aspect: this.camera.aspect,
+      fov: this.perspCam.fov,
+      aspect: this.outputAspect(),
       zoom: this.camera.zoom,
-      cameraType: "perspective",
+      cameraType: this.camera.isOrthographicCamera ? "orthographic" : "perspective",
     };
   }
 
-  // Render the current view at the node's width/height and upload as a PNG.
-  // camera.aspect already equals width/height (see layout), so the capture
-  // matches the framed preview.
-  async capture() {
-    const width = Math.max(1, Math.round(widget(this.node, "width")?.value ?? 1024));
-    const height = Math.max(1, Math.round(widget(this.node, "height")?.value ?? 1024));
-
-    this.renderer.setAnimationLoop(null);
-    const dpr = this.renderer.getPixelRatio();
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.render(this.scene, this.camera);
-
-    const blob = await new Promise((res) => this.renderer.domElement.toBlob(res, "image/png"));
-
-    this.renderer.setPixelRatio(dpr);
-    this.layout();
-    this.renderer.setAnimationLoop(() => this.frame());
-
+  async uploadFrame(blob, index) {
     const form = new FormData();
-    form.append("image", blob, `capture_${Date.now()}.png`);
+    form.append("image", blob, `capture_${Date.now()}_${index}.png`);
     form.append("type", "temp");
     form.append("subfolder", "splat_viewport");
     const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
     const data = await resp.json();
     const name = data.subfolder ? `${data.subfolder}/${data.name}` : data.name;
-    return { image: `${name} [${data.type || "temp"}]`, camera_info: this.cameraInfo() };
+    return `${name} [${data.type || "temp"}]`;
+  }
+
+  // Render the framed view at the node's width/height and upload as PNG(s).
+  // camera aspect already equals width/height (see layout), so the capture
+  // matches the framed preview. frames > 1 orbits a full turn for a batch.
+  async capture() {
+    const width = Math.max(1, Math.round(widget(this.node, "width")?.value ?? 1024));
+    const height = Math.max(1, Math.round(widget(this.node, "height")?.value ?? 1024));
+    const framesVal = Math.round(widget(this.node, "frames")?.value ?? 1);
+    const n = Math.max(1, Math.abs(framesVal));
+    const sign = framesVal < 0 ? -1 : 1;
+
+    this.renderer.setAnimationLoop(null);
+    const dpr = this.renderer.getPixelRatio();
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(width, height, false);
+    this.applyAspect(width / height);
+
+    const target = this.controls.target.clone();
+    const base = this.camera.position.clone();
+    const up = this.camera.up.clone();
+    const baseInfo = this.cameraInfo();
+    const names = [];
+    try {
+      for (let f = 0; f < n; f++) {
+        if (n > 1) {
+          const a = (sign * 2 * Math.PI * f) / n;
+          const offset = base.clone().sub(target).applyAxisAngle(new THREE.Vector3(0, 1, 0), a);
+          this.camera.position.copy(target).add(offset);
+          this.camera.up.copy(up);
+          this.camera.lookAt(target);
+          this.camera.updateMatrixWorld(true);
+        }
+        this.renderer.render(this.scene, this.camera);
+        const blob = await new Promise((res) => this.renderer.domElement.toBlob(res, "image/png"));
+        names.push(await this.uploadFrame(blob, f));
+      }
+    } finally {
+      this.camera.position.copy(base);
+      this.camera.up.copy(up);
+      this.renderer.setPixelRatio(dpr);
+      this.layout();
+      this.controls.update();
+      this.renderer.setAnimationLoop(() => this.frame());
+    }
+    return { images: names, camera_info: baseInfo };
   }
 
   installCapture() {

@@ -2,6 +2,8 @@ import json
 import os
 from pathlib import Path
 
+import torch
+
 import nodes
 import folder_paths
 from typing_extensions import override
@@ -38,6 +40,12 @@ class LoadSplatViewport(IO.ComfyNode):
                 IO.Combo.Input("model_file", options=["none"] + sorted(files), upload=IO.UploadType.model),
                 IO.Int.Input("width", default=1024, min=1, max=4096, step=1),
                 IO.Int.Input("height", default=1024, min=1, max=4096, step=1),
+                IO.Float.Input("fov", default=35.0, min=1.0, max=120.0, step=1.0,
+                               tooltip="Vertical field of view in degrees (perspective only)."),
+                IO.Combo.Input("camera_type", options=["perspective", "orthographic"]),
+                IO.Int.Input("frames", default=1, min=-240, max=240, step=1,
+                             tooltip="1 = single still. >1 = turntable: the camera orbits a full 360 turn and "
+                                     "outputs a batch of images for a Video node. Negative orbits the other way."),
                 IO.String.Input("viewport", default="", multiline=False),
             ],
             outputs=[
@@ -57,22 +65,30 @@ class LoadSplatViewport(IO.ComfyNode):
         return True
 
     @classmethod
-    def execute(cls, model_file, width, height, viewport, **kwargs) -> IO.NodeOutput:
+    def execute(cls, model_file, width, height, fov, camera_type, frames, viewport, **kwargs) -> IO.NodeOutput:
         if not viewport:
             raise ValueError(
                 "No viewport capture. Open the node, load a splat file, and frame your view before running."
             )
         state = json.loads(viewport)
-        image_name = state.get("image", "")
+        names = state.get("images") or ([state["image"]] if state.get("image") else [])
+        if not names:
+            raise ValueError("Viewport capture is empty. Load a splat file and frame your view before running.")
         camera_info = state.get("camera_info", {})
 
         # LoadImage returns 1 - alpha (white = background). Invert to coverage
         # (white = splat) to match RenderSplat and the other splat nodes.
-        output_image, alpha_mask = nodes.LoadImage().load_image(image=image_name)
-        mask = 1.0 - alpha_mask
+        load_image = nodes.LoadImage()
+        images, masks = [], []
+        for name in names:
+            img, alpha_mask = load_image.load_image(image=name)
+            images.append(img)
+            masks.append(1.0 - alpha_mask)
+        image = torch.cat(images, dim=0)
+        mask = torch.cat(masks, dim=0)
 
         mesh_path = model_file if model_file and model_file != "none" else ""
-        return IO.NodeOutput(output_image, mask, camera_info, mesh_path)
+        return IO.NodeOutput(image, mask, camera_info, mesh_path)
 
 
 class SplatLoaderExtension(ComfyExtension):
