@@ -36,16 +36,30 @@ function widget(node, name) {
   return node.widgets?.find((w) => w.name === name);
 }
 
-function styleButton(btn) {
-  Object.assign(btn.style, {
-    font: "12px sans-serif",
-    color: "#eee",
-    background: "rgba(40,40,40,0.85)",
-    border: "1px solid rgba(255,255,255,0.15)",
-    borderRadius: "4px",
-    padding: "3px 8px",
-    cursor: "pointer",
-  });
+function ensureStyles() {
+  if (document.getElementById("splatvp-styles")) return;
+  const s = document.createElement("style");
+  s.id = "splatvp-styles";
+  s.textContent = `
+    .splatvp-toolbar{position:absolute;top:8px;left:8px;z-index:10;display:flex;flex-direction:column;
+      gap:2px;padding:4px;border-radius:10px;background:rgba(18,18,18,.5);backdrop-filter:blur(8px);
+      -webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);
+      opacity:.65;transition:opacity .15s ease;}
+    .splatvp-toolbar:hover{opacity:1;}
+    .splatvp-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;appearance:none;
+      border:0;background:transparent;color:#e6e6e6;border-radius:9999px;cursor:pointer;transition:background .12s ease;}
+    .splatvp-btn:hover{background:rgba(255,255,255,.14);}
+    .splatvp-btn:active{background:rgba(255,255,255,.22);}
+    .splatvp-btn.active{background:rgba(255,255,255,.2);}
+    .splatvp-btn .pi{font-size:15px;}
+    .splatvp-sep{height:1px;background:rgba(255,255,255,.08);margin:3px 4px;}
+    .splatvp-popup{position:absolute;left:46px;top:8px;z-index:11;display:grid;grid-template-columns:repeat(2,1fr);
+      gap:2px;padding:6px;border-radius:10px;background:rgba(28,28,30,.96);box-shadow:0 6px 20px rgba(0,0,0,.5);
+      border:1px solid rgba(255,255,255,.08);font:11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+    .splatvp-popup button{appearance:none;border:0;background:transparent;color:#e6e6e6;padding:6px 12px;
+      border-radius:6px;cursor:pointer;transition:background .12s ease;white-space:nowrap;}
+    .splatvp-popup button:hover{background:rgba(255,255,255,.14);}`;
+  document.head.appendChild(s);
 }
 
 class SplatViewport {
@@ -140,41 +154,57 @@ class SplatViewport {
   }
 
   buildToolbar() {
+    ensureStyles();
     const bar = document.createElement("div");
-    Object.assign(bar.style, {
-      position: "absolute",
-      top: "8px",
-      left: "8px",
-      display: "flex",
-      flexDirection: "column",
-      gap: "6px",
-      zIndex: "10",
-    });
+    bar.className = "splatvp-toolbar";
 
-    const row = (...buttons) => {
-      const r = document.createElement("div");
-      Object.assign(r.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
-      buttons.forEach((b) => r.appendChild(b));
-      return r;
-    };
-    const button = (label, onclick) => {
+    const iconBtn = (icon, title, onclick) => {
       const b = document.createElement("button");
-      b.textContent = label;
-      styleButton(b);
+      b.className = "splatvp-btn";
+      b.title = title;
+      b.innerHTML = `<i class="pi ${icon}"></i>`;
       b.onclick = onclick;
       return b;
     };
+    const sep = () => {
+      const d = document.createElement("div");
+      d.className = "splatvp-sep";
+      return d;
+    };
 
-    const actions = row(
-      button("Load file", () => this.pickFile()),
-      button("Flip up/down", () => this.toggleFlip()),
-      button("Reset view", () => this.splatMesh && this.frameCamera(this.splatMesh)),
-    );
-    const presets = row(...PRESETS.map(([name]) => button(name, () => this.setPreset(name))));
+    bar.appendChild(iconBtn("pi-upload", "Load file", () => this.pickFile()));
+    bar.appendChild(iconBtn("pi-sort-alt", "Flip up/down", () => this.toggleFlip()));
+    bar.appendChild(iconBtn("pi-refresh", "Reset view", () => this.splatMesh && this.frameCamera(this.splatMesh)));
+    bar.appendChild(sep());
 
-    bar.appendChild(actions);
-    bar.appendChild(presets);
+    this.viewsBtn = iconBtn("pi-compass", "Views", () => this.toggleViews());
+    bar.appendChild(this.viewsBtn);
     this.container.appendChild(bar);
+
+    this.viewsPopup = document.createElement("div");
+    this.viewsPopup.className = "splatvp-popup";
+    this.viewsPopup.style.display = "none";
+    for (const [name] of PRESETS) {
+      const b = document.createElement("button");
+      b.textContent = name;
+      b.onclick = () => {
+        this.setPreset(name);
+        this.toggleViews(false);
+      };
+      this.viewsPopup.appendChild(b);
+    }
+    this.container.appendChild(this.viewsPopup);
+
+    this.onDocClick = (e) => {
+      if (!this.viewsPopup.contains(e.target) && !this.viewsBtn.contains(e.target)) this.toggleViews(false);
+    };
+    document.addEventListener("pointerdown", this.onDocClick);
+  }
+
+  toggleViews(force) {
+    const open = force ?? this.viewsPopup.style.display === "none";
+    this.viewsPopup.style.display = open ? "grid" : "none";
+    this.viewsBtn.classList.toggle("active", open);
   }
 
   toggleFlip() {
@@ -494,6 +524,7 @@ class SplatViewport {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
     this.resizeObserver?.disconnect();
+    if (this.onDocClick) document.removeEventListener("pointerdown", this.onDocClick);
     this.splatMesh?.dispose?.();
     this.renderer.dispose();
   }
