@@ -1,0 +1,18 @@
+{
+  "name": "comfyui-splat-loader",
+  "version": "0.1.0",
+  "description": "In-node Gaussian splat viewport (Spark) for ComfyUI with WYSIWYG image capture",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w"
+  },
+  "dependencies": {
+    "@sparkjsdev/spark": "^0.1.8",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "rollup": "^4.0.0"
+  }
+}
