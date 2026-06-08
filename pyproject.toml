@@ -9,6 +9,6 @@ dependencies = []
 Repository = "https://github.com/brayevalerien/comfyui-splat-loader"
 
 [tool.comfy]
-PublisherId = "YOUR_PUBLISHER_ID"
+PublisherId = "val"
 DisplayName = "Splat Loader"
 includes = ["web"]
