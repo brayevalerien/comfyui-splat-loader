@@ -57,8 +57,6 @@ Outputs:
 - `camera_info`: the camera used, compatible with the other 3D and splat nodes
 - `mesh_path`: the input-relative path of the loaded file
 
-> Note: scrolling only zooms the splat while the cursor is over the viewport. Everywhere else it zooms the ComfyUI canvas as usual.
-
 ## Acknowledgements
 - [Spark](https://sparkjs.dev/) for the Gaussian splat renderer
 - [three.js](https://threejs.org/) for the viewport

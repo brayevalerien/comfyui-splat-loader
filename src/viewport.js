@@ -145,7 +145,67 @@ class SplatViewport {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.zoomToCursor = true;
+    this.controls.addEventListener("end", () => this.saveState());
     if (target) this.controls.target.copy(target);
+  }
+
+  // Persist the camera pose + flip into node.properties so the framing is restored
+  // when the workflow is reloaded or the browser refreshed.
+  saveState() {
+    if (!this.node.properties) this.node.properties = {};
+    const p = this.camera.position;
+    const t = this.controls.target;
+    const u = this.camera.up;
+    this.node.properties.splatCamera = {
+      position: [p.x, p.y, p.z],
+      target: [t.x, t.y, t.z],
+      up: [u.x, u.y, u.z],
+      zoom: this.camera.zoom,
+      radius: this.radius,
+      flipped: this.flipped,
+    };
+  }
+
+  applyState(s) {
+    try {
+      if (s.flipped !== undefined) {
+        this.flipped = s.flipped;
+        if (this.splatMesh) this.splatMesh.rotation.x = this.flipped ? Math.PI : 0;
+      }
+      if (s.radius) this.radius = s.radius;
+      if (s.up) this.camera.up.set(...s.up);
+      if (s.target) this.controls.target.set(...s.target);
+      if (s.position) this.camera.position.set(...s.position);
+      this.camera.zoom = s.zoom ?? this.camera.zoom;
+      this.camera.updateProjectionMatrix();
+      this.layout();
+      this.controls.update();
+    } catch (e) {
+      this.showError(`Failed to restore view: ${e.message || e}`);
+    }
+  }
+
+  // Restored widget values (fov, camera_type, splat_scale) are not auto-applied to
+  // the viewport on load; push them in after a workflow load.
+  syncFromWidgets() {
+    const fov = widget(this.node, "fov")?.value;
+    if (fov) {
+      this.perspCam.fov = fov;
+      this.perspCam.updateProjectionMatrix();
+    }
+    const scale = widget(this.node, "splat_scale")?.value;
+    if (scale) this.scaleUniform.value = scale;
+    if (widget(this.node, "camera_type")?.value === "orthographic") this.setCameraType("orthographic");
+    this.layout();
+  }
+
+  // Called after a saved workflow loads this node.
+  onLoaded() {
+    const mf = widget(this.node, "model_file")?.value;
+    // Capture the saved pose before syncing widgets (which can move the camera).
+    this.pendingState = mf && mf !== "none" ? this.node.properties?.splatCamera || null : null;
+    this.syncFromWidgets();
+    if (mf && mf !== "none") this.loadSplat(mf);
   }
 
   // The frontend has a global handler that forwards wheel events to the graph zoom,
@@ -233,6 +293,7 @@ class SplatViewport {
       this.camera.position.copy(center).add(offset);
     }
     this.controls.update();
+    this.saveState();
   }
 
   setPreset(name) {
@@ -242,6 +303,7 @@ class SplatViewport {
     this.camera.position.copy(this.controls.target).addScaledVector(new THREE.Vector3(...dir), dist);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    this.saveState();
   }
 
   setCameraType(type) {
@@ -411,6 +473,7 @@ class SplatViewport {
       cw.callback = (value) => {
         prev?.call(cw, value);
         this.setCameraType(value);
+        this.saveState();
       };
     }
     const ss = widget(this.node, "splat_scale");
@@ -426,6 +489,8 @@ class SplatViewport {
   }
 
   async loadSplat(modelFile) {
+    if (modelFile === this.activeFile) return; // avoid a redundant reload wiping a restored view
+    this.activeFile = modelFile;
     if (this.splatMesh) {
       this.scene.remove(this.splatMesh);
       this.splatMesh.dispose?.();
@@ -445,15 +510,22 @@ class SplatViewport {
       this.scene.add(mesh);
       await mesh.initialized;
       mesh.updateGenerator();
-      this.frameCamera(mesh);
+      if (this.pendingState) {
+        this.frameCamera(mesh, true); // compute center/radius without moving the camera
+        this.applyState(this.pendingState);
+        this.pendingState = null;
+      } else {
+        this.frameCamera(mesh);
+      }
     } catch (e) {
+      this.activeFile = null;
       this.showError(`Failed to load ${modelFile}: ${e.message || e}`);
     }
   }
 
   // Frame on the dense core. Scene splats often have ~1% floater splats far from
   // the subject that blow up the true bounding box; a percentile radius ignores them.
-  frameCamera(mesh) {
+  frameCamera(mesh, computeOnly = false) {
     mesh.updateMatrixWorld(true);
     const ps = mesh.packedSplats;
     const num = ps?.numSplats || 0;
@@ -493,16 +565,23 @@ class SplatViewport {
     this.radius = radius;
     const fov = (this.perspCam.fov * Math.PI) / 180;
     const dist = (radius / Math.sin(fov / 2)) * FRAME_MARGIN;
-    this.controls.target.copy(this.center);
-    const dir = new THREE.Vector3(0.6, 0.4, 1).normalize();
-    this.camera.position.copy(this.center).addScaledVector(dir, dist);
     for (const cam of [this.perspCam, this.orthoCam]) {
       cam.near = Math.max(dist / 1000, 1e-3);
       cam.far = dist * 1000 + radius * 10;
     }
+    // computeOnly: keep center/radius/near/far but leave the camera where it is
+    // (used when restoring a saved pose).
+    if (computeOnly) {
+      this.layout();
+      return;
+    }
+    this.controls.target.copy(this.center);
+    const dir = new THREE.Vector3(0.6, 0.4, 1).normalize();
+    this.camera.position.copy(this.center).addScaledVector(dir, dist);
     this.camera.zoom = 1;
     this.layout();
     this.controls.update();
+    this.saveState();
   }
 
   cameraInfo() {
@@ -619,5 +698,9 @@ app.registerExtension({
       this._splatViewport?.dispose();
       onRemoved?.apply(this, arguments);
     };
+  },
+
+  async loadedGraphNode(node) {
+    if (node.type === NODE_ID || node.comfyClass === NODE_ID) node._splatViewport?.onLoaded();
   },
 });
