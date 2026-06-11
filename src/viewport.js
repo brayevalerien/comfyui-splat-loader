@@ -846,12 +846,35 @@ class SplatViewport {
   }
 
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
-    this.renderer.setAnimationLoop(null);
-    this.resizeObserver?.disconnect();
-    if (this.onDocClick) document.removeEventListener("pointerdown", this.onDocClick);
-    this.splatMesh?.dispose?.();
-    this.renderer.dispose();
+    try {
+      this.renderer.setAnimationLoop(null);
+      this.resizeObserver?.disconnect();
+      if (this.onDocClick) document.removeEventListener("pointerdown", this.onDocClick);
+      this.controls?.dispose();
+      if (this.splatMesh) {
+        this.scene.remove(this.splatMesh);
+        this.splatMesh.dispose?.();
+        this.splatMesh = null;
+      }
+      if (this.spark) {
+        this.scene.remove(this.spark);
+        this.spark.material?.dispose?.();
+        this.spark.geometry?.dispose?.();
+      }
+      this.renderer.dispose();
+      // Release the WebGL context itself (browsers cap these ~16); shared decode
+      // workers are pooled module-side, so we deliberately don't touch them.
+      this.renderer.forceContextLoss?.();
+      this.renderer.domElement?.remove();
+    } catch (e) {
+      console.error("[splat-loader] dispose error", e);
+    }
+    this.scene = null;
+    this.spark = null;
+    this.controls = null;
+    this.renderer = null;
   }
 }
 
