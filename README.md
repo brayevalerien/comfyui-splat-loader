@@ -45,9 +45,11 @@ Finally, restart the ComfyUI server and refresh your browser. The node is ready 
 ## How to use
 Add the node by searching for **Load Splat & Viewport (Spark)** (category `3d/splat`).
 
-1. Load a splat file, either with the **Load file** button (opens your filesystem and uploads it into `ComfyUI/input/3d`) or from the `model_file` dropdown if it is already there (this dropdown lists the splated in your ComfyUI input folder).
-2. Start by settings the viewport resolution, it will also be the output resolution
-3. Adjust the other camera setting
+1. Load a splat file, either with the **Load file** button (opens your filesystem and uploads it into `ComfyUI/input/3d`) or from the `model_file` dropdown if it is already there (this dropdown lists the splat files in your ComfyUI input folder).
+2. Start by setting the viewport resolution, it will also be the output resolution
+3. Adjust the other camera settings (FOV, camera type) and use the viewport to navigate the scene
+4. Adjust the splat scale so they fill the view without overlapping too much
+5. If you want a turntable render (have multiple images distributed in an orbit around your viewpoint), set a number of frames higher than 1. Setting a negative number of frames goes the other way around.
 
 Outputs:
 - `image`: the framed view (a batch when `frames` > 1), with a transparent background
