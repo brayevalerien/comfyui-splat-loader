@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-splat-loader"
 description = "In-node Gaussian splat viewport (Spark) for ComfyUI with WYSIWYG image capture."
-version = "0.1.8"
+version = "0.1.9"
 license = { file = "LICENSE" }
 dependencies = []
 

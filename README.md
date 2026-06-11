@@ -16,7 +16,6 @@ Splat Loader fixes both problems: you load a splat, orbit around it in a proper 
 Supported formats: `.spz`, `.ply`, `.splat`, `.ksplat`.
 
 ## How to install
-
 ### Via ComfyUI Manager (recommended)
 Search for **Splat Loader** in [ComfyUI Manager](https://github.com/Comfy-Org/ComfyUI-Manager) and install it. The prebuilt viewport is bundled, so you do not need Node.js or any build step. Restart ComfyUI when prompted and you are done.
 
@@ -46,18 +45,9 @@ Finally, restart the ComfyUI server and refresh your browser. The node is ready 
 ## How to use
 Add the node by searching for **Load Splat & Viewport (Spark)** (category `3d/splat`).
 
-1. Load a splat file, either with the **Load file** button (opens your filesystem and uploads it into `ComfyUI/input/3d`) or from the `model_file` dropdown if it is already there.
-2. Frame your shot in the viewport:
-   - **Left drag** to orbit, **right drag** to pan, **scroll** to zoom
-   - **Front / Back / Left / Right / Top / Bottom** snap to a standard view
-   - **Flip up/down** if the splat loads upside down (some files are stored Y-down, some are not)
-   - **Reset view** to re-frame on the subject
-3. Set the inputs:
-   - `width` / `height`: output resolution. The viewport letterboxes to that aspect ratio so the preview matches the capture.
-   - `fov`: vertical field of view (perspective only).
-   - `camera_type`: `perspective` or `orthographic`.
-   - `frames`: `1` for a single still. Greater than 1 for a turntable: the camera orbits a full 360 turn and outputs a batch of images you can feed a Video node. A negative value orbits the other way.
-4. Run the workflow. The framed view is rendered at your chosen resolution and sent to the outputs.
+1. Load a splat file, either with the **Load file** button (opens your filesystem and uploads it into `ComfyUI/input/3d`) or from the `model_file` dropdown if it is already there (this dropdown lists the splated in your ComfyUI input folder).
+2. Start by settings the viewport resolution, it will also be the output resolution
+3. Adjust the other camera setting
 
 Outputs:
 - `image`: the framed view (a batch when `frames` > 1), with a transparent background
