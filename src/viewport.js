@@ -147,7 +147,9 @@ class SplatViewport {
     const focus = () => this.container.focus({ preventScroll: true });
     this.container.addEventListener("pointerenter", focus);
     this.container.addEventListener("pointerdown", focus);
-    this.renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Right-drag pans the camera; stop the event before it bubbles to the global
+    // contextmenu handler so the graph's context menu does not also open.
+    this.container.addEventListener("contextmenu", (e) => { e.preventDefault(); e.stopPropagation(); });
   }
 
   buildToolbar() {
