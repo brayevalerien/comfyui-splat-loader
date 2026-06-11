@@ -42,6 +42,9 @@ class LoadSplatViewport(IO.ComfyNode):
                 IO.Int.Input("height", default=1024, min=1, max=4096, step=1),
                 IO.Float.Input("fov", default=35.0, min=1.0, max=120.0, step=1.0,
                                tooltip="Vertical field of view in degrees (perspective only)."),
+                IO.Float.Input("splat_scale", default=1.0, min=0.1, max=3.0, step=0.05,
+                               tooltip="Multiplier on each gaussian's size. Lower = crisper points, "
+                                       "higher = fuller/softer surface."),
                 IO.Combo.Input("camera_type", options=["perspective", "orthographic"]),
                 IO.Int.Input("frames", default=1, min=-240, max=240, step=1,
                              tooltip="1 = single still. >1 = turntable: the camera orbits a full 360 turn and "

@@ -2,7 +2,18 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh, dyno } from "@sparkjsdev/spark";
+
+// A Spark object modifier that multiplies each gaussian's scales by a live uniform,
+// scaling the splat footprint without moving centers (like RenderSplat's splat_scale).
+function makeScaleModifier(scaleUniform) {
+  const { dynoBlock, Gsplat, splitGsplat, combineGsplat, mul } = dyno;
+  return dynoBlock({ gsplat: Gsplat }, { gsplat: Gsplat }, ({ gsplat }) => {
+    let { scales } = splitGsplat(gsplat).outputs;
+    scales = mul(scales, scaleUniform);
+    return { gsplat: combineGsplat({ gsplat, scales }) };
+  });
+}
 
 const NODE_ID = "LoadSplatViewport";
 const VIEW_HEIGHT = 360;
@@ -67,6 +78,7 @@ class SplatViewport {
     this.flipped = true; // 3DGS files are usually Y-down -> default 180 about X
     this.center = new THREE.Vector3();
     this.radius = 1;
+    this.scaleUniform = dyno.dynoFloat(widget(node, "splat_scale")?.value ?? 1.0);
 
     this.container = document.createElement("div");
     Object.assign(this.container.style, {
@@ -401,6 +413,16 @@ class SplatViewport {
         this.setCameraType(value);
       };
     }
+    const ss = widget(this.node, "splat_scale");
+    if (ss) {
+      const prev = ss.callback;
+      ss.callback = (value) => {
+        prev?.call(ss, value);
+        this.scaleUniform.value = value;
+        // The modifier bakes the splats during generation, so re-run it.
+        this.splatMesh?.updateVersion();
+      };
+    }
   }
 
   async loadSplat(modelFile) {
@@ -418,9 +440,11 @@ class SplatViewport {
       const fileBytes = new Uint8Array(await resp.arrayBuffer());
       const mesh = new SplatMesh({ fileBytes, fileType: EXT_TO_TYPE[ext], fileName: modelFile });
       mesh.rotation.x = this.flipped ? Math.PI : 0;
+      mesh.objectModifier = makeScaleModifier(this.scaleUniform);
       this.splatMesh = mesh;
       this.scene.add(mesh);
       await mesh.initialized;
+      mesh.updateGenerator();
       this.frameCamera(mesh);
     } catch (e) {
       this.showError(`Failed to load ${modelFile}: ${e.message || e}`);
