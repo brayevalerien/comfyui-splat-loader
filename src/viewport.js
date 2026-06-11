@@ -206,10 +206,19 @@ class SplatViewport {
 
   toggleFlip() {
     this.flipped = !this.flipped;
-    if (this.splatMesh) {
-      this.splatMesh.rotation.x = this.flipped ? Math.PI : 0;
-      this.frameCamera(this.splatMesh);
+    if (!this.splatMesh) return;
+    // Flip in place: keep the camera's angle/distance/zoom, just re-point at the
+    // splat's new center (the 180 about X moves it) so the view does not reset.
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    this.splatMesh.rotation.x = this.flipped ? Math.PI : 0;
+    this.splatMesh.updateMatrixWorld(true);
+    if (this.localCenter) {
+      const center = this.splatMesh.localToWorld(this.localCenter.clone());
+      this.center.copy(center);
+      this.controls.target.copy(center);
+      this.camera.position.copy(center).add(offset);
     }
+    this.controls.update();
   }
 
   setPreset(name) {
@@ -227,6 +236,18 @@ class SplatViewport {
     const pos = this.camera.position.clone();
     const up = this.camera.up.clone();
     const target = this.controls.target.clone();
+    // Match the apparent scale across projections (via zoom, no camera move) so only
+    // the projection type changes, not the framing.
+    const dist = Math.max(pos.distanceTo(target), 1e-6);
+    const halfFov = ((this.perspCam.fov * Math.PI) / 180) / 2;
+    const orthoTop = this.radius * FRAME_MARGIN;
+    if (next === this.orthoCam) {
+      const perspHalfH = (dist * Math.tan(halfFov)) / (this.perspCam.zoom || 1);
+      next.zoom = orthoTop / Math.max(perspHalfH, 1e-6);
+    } else {
+      const orthoHalfH = orthoTop / (this.orthoCam.zoom || 1);
+      next.zoom = (dist * Math.tan(halfFov)) / Math.max(orthoHalfH, 1e-6);
+    }
     this.camera = next;
     this.camera.position.copy(pos);
     this.camera.up.copy(up);
@@ -441,6 +462,7 @@ class SplatViewport {
       radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1e-3);
     }
 
+    this.localCenter = localCenter.clone();
     this.center.copy(mesh.localToWorld(localCenter.clone()));
     this.radius = radius;
     const fov = (this.perspCam.fov * Math.PI) / 180;
