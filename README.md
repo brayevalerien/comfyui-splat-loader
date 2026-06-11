@@ -60,6 +60,7 @@ Outputs:
 - `mask`: the splat coverage (white where the splat is), matching the other splat nodes
 - `camera_info`: the camera used, compatible with the other 3D and splat nodes
 - `mesh_path`: the input-relative path of the loaded file
+- `splat`: the loaded gaussian splat, ready to feed `Render Splat` or the other splat nodes
 
 ## Acknowledgements
 - [Spark](https://sparkjs.dev/) for the Gaussian splat renderer

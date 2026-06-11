@@ -2,12 +2,13 @@ import json
 import os
 from pathlib import Path
 
+import numpy as np
 import torch
 
 import nodes
 import folder_paths
 from typing_extensions import override
-from comfy_api.latest import IO, ComfyExtension
+from comfy_api.latest import IO, ComfyExtension, Types
 
 SPLAT_EXTENSIONS = {".spz", ".ply", ".splat", ".ksplat"}
 
@@ -56,7 +57,24 @@ class LoadSplatViewport(IO.ComfyNode):
                 IO.Mask.Output(display_name="mask"),
                 IO.Load3DCamera.Output(display_name="camera_info"),
                 IO.String.Output(display_name="mesh_path"),
+                IO.Splat.Output(display_name="splat"),
             ],
+        )
+
+    @classmethod
+    def _load_splat(cls, model_file):
+        # Parse the loaded file into a SPLAT (same as core File3DToSplat) so it can
+        # feed RenderSplat etc. Imported lazily to avoid load-time coupling.
+        from comfy_extras.nodes_gaussian_splat import _GAUSSIAN_PARSERS, _detect_splat_format
+
+        with open(folder_paths.get_annotated_filepath(model_file), "rb") as f:
+            data = f.read()
+        fmt = model_file.rsplit(".", 1)[-1].lower()
+        parser = _GAUSSIAN_PARSERS.get(fmt) or _GAUSSIAN_PARSERS[_detect_splat_format(data)]
+        xyz, scale, rot, opacity, sh = parser(data)
+        t = lambda a: torch.from_numpy(np.ascontiguousarray(a)).float()
+        return Types.SPLAT(
+            t(xyz)[None], t(scale)[None], t(rot)[None], t(opacity).reshape(1, -1, 1), t(sh)[None]
         )
 
     @classmethod
@@ -90,8 +108,10 @@ class LoadSplatViewport(IO.ComfyNode):
         image = torch.cat(images, dim=0)
         mask = torch.cat(masks, dim=0)
 
-        mesh_path = model_file if model_file and model_file != "none" else ""
-        return IO.NodeOutput(image, mask, camera_info, mesh_path)
+        has_file = bool(model_file) and model_file != "none"
+        mesh_path = model_file if has_file else ""
+        splat = cls._load_splat(model_file) if has_file else None
+        return IO.NodeOutput(image, mask, camera_info, mesh_path, splat)
 
 
 class SplatLoaderExtension(ComfyExtension):
