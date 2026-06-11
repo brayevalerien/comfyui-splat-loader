@@ -50,10 +50,8 @@ function ensureStyles() {
   s.id = "splatvp-styles";
   s.textContent = `
     .splatvp-toolbar{position:absolute;top:8px;left:8px;z-index:10;display:flex;flex-direction:column;
-      gap:2px;padding:4px;border-radius:10px;background:rgba(18,18,18,.5);backdrop-filter:blur(8px);
-      -webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);
-      opacity:.65;transition:opacity .15s ease;}
-    .splatvp-toolbar:hover{opacity:1;}
+      gap:2px;padding:4px;border-radius:10px;background:rgba(20,20,22,.72);backdrop-filter:blur(10px);
+      -webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.09);}
     .splatvp-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;appearance:none;
       border:0;background:transparent;color:#e6e6e6;border-radius:9999px;cursor:pointer;transition:background .12s ease;}
     .splatvp-btn:hover{background:rgba(255,255,255,.14);}
@@ -61,12 +59,30 @@ function ensureStyles() {
     .splatvp-btn.active{background:rgba(255,255,255,.2);}
     .splatvp-btn .pi{font-size:15px;}
     .splatvp-sep{height:1px;background:rgba(255,255,255,.08);margin:3px 4px;}
-    .splatvp-popup{position:absolute;left:46px;top:8px;z-index:11;display:grid;grid-template-columns:repeat(2,1fr);
-      gap:2px;padding:6px;border-radius:10px;background:rgba(28,28,30,.96);box-shadow:0 6px 20px rgba(0,0,0,.5);
-      border:1px solid rgba(255,255,255,.08);font:11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+    .splatvp-popup{position:absolute;left:54px;top:8px;z-index:11;display:grid;grid-template-columns:repeat(2,1fr);
+      gap:2px;padding:6px;border-radius:10px;background:rgba(20,20,22,.72);backdrop-filter:blur(10px);
+      -webkit-backdrop-filter:blur(10px);box-shadow:0 6px 20px rgba(0,0,0,.4);
+      border:1px solid rgba(255,255,255,.09);font:11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
     .splatvp-popup button{appearance:none;border:0;background:transparent;color:#e6e6e6;padding:6px 12px;
       border-radius:6px;cursor:pointer;transition:background .12s ease;white-space:nowrap;}
-    .splatvp-popup button:hover{background:rgba(255,255,255,.14);}`;
+    .splatvp-popup button:hover{background:rgba(255,255,255,.14);}
+    .splatvp-bm{display:flex;flex-direction:column;gap:1px;min-width:178px;max-height:280px;overflow:auto;padding:6px;}
+    .splatvp-bm-save{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;font-weight:600;
+      background:rgba(255,255,255,.08)!important;border-radius:7px!important;padding:7px 10px!important;margin-bottom:5px;}
+    .splatvp-bm-save:hover{background:rgba(255,255,255,.16)!important;}
+    .splatvp-bm-row{display:flex;align-items:center;gap:2px;border-radius:7px;padding:1px;}
+    .splatvp-bm-row:hover{background:rgba(255,255,255,.10);}
+    .splatvp-bm-name{flex:1;padding:6px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;}
+    .splatvp-bm-name input{width:100%;background:rgba(0,0,0,.45);color:#fff;border:1px solid rgba(255,255,255,.25);
+      border-radius:5px;font:inherit;padding:3px 5px;outline:none;}
+    .splatvp-bm-act{width:24px;height:24px;flex:0 0 auto;padding:0!important;display:flex;align-items:center;
+      justify-content:center;color:#bbb;opacity:0;transition:opacity .12s ease,background .12s ease,color .12s ease;}
+    .splatvp-bm-row:hover .splatvp-bm-act{opacity:1;}
+    .splatvp-bm-act .pi{font-size:12px;}
+    .splatvp-bm-edit:hover{background:rgba(255,255,255,.18)!important;color:#fff;}
+    .splatvp-bm-del:hover{background:rgba(220,70,70,.28)!important;color:#f99;}
+    .splatvp-bm-empty{color:#888;padding:6px 8px;font-style:italic;}`;
   document.head.appendChild(s);
 }
 
@@ -153,17 +169,7 @@ class SplatViewport {
   // when the workflow is reloaded or the browser refreshed.
   saveState() {
     if (!this.node.properties) this.node.properties = {};
-    const p = this.camera.position;
-    const t = this.controls.target;
-    const u = this.camera.up;
-    this.node.properties.splatCamera = {
-      position: [p.x, p.y, p.z],
-      target: [t.x, t.y, t.z],
-      up: [u.x, u.y, u.z],
-      zoom: this.camera.zoom,
-      radius: this.radius,
-      flipped: this.flipped,
-    };
+    this.node.properties.splatCamera = this.currentCameraState();
   }
 
   applyState(s) {
@@ -205,6 +211,7 @@ class SplatViewport {
     // Capture the saved pose before syncing widgets (which can move the camera).
     this.pendingState = mf && mf !== "none" ? this.node.properties?.splatCamera || null : null;
     this.syncFromWidgets();
+    this.renderBookmarks();
     if (mf && mf !== "none") this.loadSplat(mf);
   }
 
@@ -243,13 +250,18 @@ class SplatViewport {
       return d;
     };
 
-    bar.appendChild(iconBtn("pi-upload", "Load file", () => this.pickFile()));
-    bar.appendChild(iconBtn("pi-sort-alt", "Flip up/down", () => this.toggleFlip()));
-    bar.appendChild(iconBtn("pi-refresh", "Reset view", () => this.splatMesh && this.frameCamera(this.splatMesh)));
+    bar.appendChild(iconBtn("pi-upload", "Load file", () => { this.closeAllPopups(); this.pickFile(); }));
+    bar.appendChild(iconBtn("pi-sort-alt", "Flip up/down", () => { this.closeAllPopups(); this.toggleFlip(); }));
+    bar.appendChild(iconBtn("pi-refresh", "Reset view", () => {
+      this.closeAllPopups();
+      if (this.splatMesh) this.frameCamera(this.splatMesh);
+    }));
     bar.appendChild(sep());
 
     this.viewsBtn = iconBtn("pi-compass", "Views", () => this.toggleViews());
     bar.appendChild(this.viewsBtn);
+    this.bookmarksBtn = iconBtn("pi-bookmark", "Camera bookmarks", () => this.toggleBookmarks());
+    bar.appendChild(this.bookmarksBtn);
     this.container.appendChild(bar);
 
     this.viewsPopup = document.createElement("div");
@@ -266,16 +278,177 @@ class SplatViewport {
     }
     this.container.appendChild(this.viewsPopup);
 
+    this.bookmarksPopup = document.createElement("div");
+    this.bookmarksPopup.className = "splatvp-popup splatvp-bm";
+    this.bookmarksPopup.style.display = "none";
+    this.bookmarksPopup.style.top = "40px";
+    const save = document.createElement("button");
+    save.className = "splatvp-bm-save";
+    save.innerHTML = `<i class="pi pi-plus"></i> Save current view`;
+    save.onclick = () => this.addBookmark();
+    this.bookmarksPopup.appendChild(save);
+    this.bookmarksList = document.createElement("div");
+    this.bookmarksPopup.appendChild(this.bookmarksList);
+    this.container.appendChild(this.bookmarksPopup);
+    this.renderBookmarks();
+
     this.onDocClick = (e) => {
       if (!this.viewsPopup.contains(e.target) && !this.viewsBtn.contains(e.target)) this.toggleViews(false);
+      if (!this.bookmarksPopup.contains(e.target) && !this.bookmarksBtn.contains(e.target)) this.toggleBookmarks(false);
     };
     document.addEventListener("pointerdown", this.onDocClick);
   }
 
   toggleViews(force) {
     const open = force ?? this.viewsPopup.style.display === "none";
+    if (open) this.toggleBookmarks(false); // only one popup open at a time
     this.viewsPopup.style.display = open ? "grid" : "none";
     this.viewsBtn.classList.toggle("active", open);
+  }
+
+  toggleBookmarks(force) {
+    const open = force ?? this.bookmarksPopup.style.display === "none";
+    if (open) {
+      this.toggleViews(false);
+      this.renderBookmarks();
+    }
+    this.bookmarksPopup.style.display = open ? "flex" : "none";
+    this.bookmarksBtn.classList.toggle("active", open);
+  }
+
+  closeAllPopups() {
+    this.toggleViews(false);
+    this.toggleBookmarks(false);
+  }
+
+  getBookmarks() {
+    return this.node.properties?.splatBookmarks ?? [];
+  }
+
+  setBookmarks(bookmarks) {
+    if (!this.node.properties) this.node.properties = {};
+    this.node.properties.splatBookmarks = bookmarks;
+  }
+
+  currentCameraState() {
+    const p = this.camera.position;
+    const t = this.controls.target;
+    const u = this.camera.up;
+    return {
+      position: [p.x, p.y, p.z],
+      target: [t.x, t.y, t.z],
+      up: [u.x, u.y, u.z],
+      zoom: this.camera.zoom,
+      radius: this.radius,
+      flipped: this.flipped,
+    };
+  }
+
+  addBookmark() {
+    const bookmarks = this.getBookmarks();
+    const used = new Set(bookmarks.map((b) => b.name));
+    let n = 1;
+    while (used.has(`View ${n}`)) n++; // smallest unused number, so no duplicates after deletes
+    bookmarks.push({
+      name: `View ${n}`,
+      fov: widget(this.node, "fov")?.value,
+      camera_type: widget(this.node, "camera_type")?.value,
+      ...this.currentCameraState(),
+    });
+    this.setBookmarks(bookmarks);
+    this.renderBookmarks();
+  }
+
+  applyBookmark(i) {
+    const bm = this.getBookmarks()[i];
+    if (!bm) return;
+    const fovW = widget(this.node, "fov");
+    if (fovW && bm.fov != null) {
+      fovW.value = bm.fov;
+      this.perspCam.fov = bm.fov;
+      this.perspCam.updateProjectionMatrix();
+    }
+    const ctW = widget(this.node, "camera_type");
+    if (ctW && bm.camera_type) {
+      ctW.value = bm.camera_type;
+      this.setCameraType(bm.camera_type);
+    }
+    this.applyState(bm);
+    this.saveState();
+    this.toggleBookmarks(false); // close after going to a view
+  }
+
+  deleteBookmark(i) {
+    const bookmarks = this.getBookmarks();
+    bookmarks.splice(i, 1);
+    this.setBookmarks(bookmarks);
+    this.renderBookmarks();
+  }
+
+  renameBookmark(i, name) {
+    const bookmarks = this.getBookmarks();
+    if (!bookmarks[i]) return;
+    bookmarks[i].name = name || bookmarks[i].name;
+    this.setBookmarks(bookmarks);
+    this.renderBookmarks();
+  }
+
+  renderBookmarks() {
+    if (!this.bookmarksList) return;
+    const bookmarks = this.getBookmarks();
+    this.bookmarksList.replaceChildren();
+    if (!bookmarks.length) {
+      const empty = document.createElement("div");
+      empty.className = "splatvp-bm-empty";
+      empty.textContent = "No saved views yet.";
+      this.bookmarksList.appendChild(empty);
+      return;
+    }
+    bookmarks.forEach((bm, i) => {
+      const row = document.createElement("div");
+      row.className = "splatvp-bm-row";
+      const name = document.createElement("span");
+      name.className = "splatvp-bm-name";
+      name.textContent = bm.name;
+      name.title = "Click to go to this view";
+      name.onclick = () => this.applyBookmark(i);
+      const edit = document.createElement("button");
+      edit.className = "splatvp-btn splatvp-bm-act splatvp-bm-edit";
+      edit.innerHTML = `<i class="pi pi-pencil"></i>`;
+      edit.title = "Rename";
+      edit.onclick = (e) => {
+        e.stopPropagation();
+        this.startRename(name, i);
+      };
+      const del = document.createElement("button");
+      del.className = "splatvp-btn splatvp-bm-act splatvp-bm-del";
+      del.innerHTML = `<i class="pi pi-times"></i>`;
+      del.title = "Delete";
+      del.onclick = (e) => {
+        e.stopPropagation();
+        this.deleteBookmark(i);
+      };
+      row.appendChild(name);
+      row.appendChild(edit);
+      row.appendChild(del);
+      this.bookmarksList.appendChild(row);
+    });
+  }
+
+  startRename(nameEl, i) {
+    const input = document.createElement("input");
+    input.value = this.getBookmarks()[i]?.name ?? "";
+    const commit = () => this.renameBookmark(i, input.value.trim());
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") input.blur();
+      if (e.key === "Escape") this.renderBookmarks();
+      e.stopPropagation();
+    };
+    input.onclick = (e) => e.stopPropagation(); // don't trigger "go to view" on the parent
+    input.onblur = commit;
+    nameEl.replaceChildren(input);
+    input.focus();
+    input.select();
   }
 
   toggleFlip() {

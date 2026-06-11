@@ -51,8 +51,12 @@ Add the node by searching for **Load Splat & Viewport (Spark)** (category `3d/sp
 4. Adjust the splat scale so they fill the view without overlapping too much
 5. If you want a turntable render (have multiple images distributed in an orbit around your viewpoint), set a number of frames higher than 1. Setting a negative number of frames goes the other way around.
 
+There are several navigation related buttons in the viewport, including one for flipping the gaussian splats upside down since `.spz` files tend to be y-down.
+
+There also is a bookmark function. Hit the bookmark icon to open to save views and restore them later. The bookmark contains the camera postion and orientation but also all the camera related settings (e.g. type and FOV). You can delete or rename views by hovering them.
+
 Outputs:
-- `image`: the framed view (a batch when `frames` > 1), with a transparent background
+- `image`: the framed view (a batch when `frames` > 1), with a black background
 - `mask`: the splat coverage (white where the splat is), matching the other splat nodes
 - `camera_info`: the camera used, compatible with the other 3D and splat nodes
 - `mesh_path`: the input-relative path of the loaded file
