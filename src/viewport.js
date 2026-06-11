@@ -2,17 +2,14 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { SparkRenderer, SplatMesh, SplatFileType } from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 
 const NODE_ID = "LoadSplatViewport";
 const VIEW_HEIGHT = 360;
 const FRAME_MARGIN = 1.2;
-const EXT_TO_TYPE = {
-  spz: SplatFileType.SPZ,
-  ply: SplatFileType.PLY,
-  splat: SplatFileType.SPLAT,
-  ksplat: SplatFileType.KSPLAT,
-};
+// Spark's SplatFileType is a const enum (no runtime value when imported), so pass
+// the literal type strings. spz/ply are content-sniffed, but splat/ksplat need this.
+const EXT_TO_TYPE = { spz: "spz", ply: "ply", splat: "splat", ksplat: "ksplat" };
 // name, direction from target to camera, camera up (Z-up for top/bottom to avoid gimbal).
 const PRESETS = [
   ["Front", [0, 0, 1], [0, 1, 0]],
@@ -258,7 +255,7 @@ class SplatViewport {
           this.loadSplat(rel);
         }
       } catch (e) {
-        console.error("[splat-loader] upload failed", e);
+        this.showError(e.message || "Upload failed");
       }
     };
     input.click();
@@ -270,8 +267,31 @@ class SplatViewport {
     form.append("type", "input");
     form.append("subfolder", "3d");
     const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
+    if (!resp.ok) {
+      const why = resp.status === 413
+        ? "file exceeds the server upload limit (raise it with --max-upload-size, in MB)"
+        : `server returned ${resp.status} ${resp.statusText}`;
+      throw new Error(`Upload of ${file.name} failed: ${why}`);
+    }
     const data = await resp.json();
     return data.subfolder ? `${data.subfolder}/${data.name}` : data.name;
+  }
+
+  showError(message) {
+    console.error("[splat-loader]", message);
+    clearTimeout(this._errorTimer);
+    if (!this.errorBanner) {
+      this.errorBanner = document.createElement("div");
+      Object.assign(this.errorBanner.style, {
+        position: "absolute", bottom: "8px", left: "8px", right: "8px", zIndex: "12",
+        padding: "8px 10px", borderRadius: "6px", background: "rgba(150,30,30,.92)", color: "#fff",
+        font: "12px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", textAlign: "center",
+      });
+      this.container.appendChild(this.errorBanner);
+    }
+    this.errorBanner.textContent = message;
+    this.errorBanner.style.display = "block";
+    this._errorTimer = setTimeout(() => { if (this.errorBanner) this.errorBanner.style.display = "none"; }, 6000);
   }
 
   outputAspect() {
@@ -368,14 +388,19 @@ class SplatViewport {
     }
     try {
       const ext = modelFile.split(".").pop().toLowerCase();
-      const mesh = new SplatMesh({ url: splatFileURL(modelFile), fileType: EXT_TO_TYPE[ext] });
+      // Fetch the bytes ourselves: Spark ignores fileType on the url path and can't
+      // sniff .splat/.ksplat from our extension-less /view URL. fileBytes honors fileType.
+      const resp = await fetch(splatFileURL(modelFile));
+      if (!resp.ok) throw new Error(`server returned ${resp.status} ${resp.statusText}`);
+      const fileBytes = new Uint8Array(await resp.arrayBuffer());
+      const mesh = new SplatMesh({ fileBytes, fileType: EXT_TO_TYPE[ext], fileName: modelFile });
       mesh.rotation.x = this.flipped ? Math.PI : 0;
       this.splatMesh = mesh;
       this.scene.add(mesh);
       await mesh.initialized;
       this.frameCamera(mesh);
     } catch (e) {
-      console.error("[splat-loader] failed to load", modelFile, e);
+      this.showError(`Failed to load ${modelFile}: ${e.message || e}`);
     }
   }
 
